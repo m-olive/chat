@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Matt Oliveira. All Rights Reserved.
+// Copyright (c) 2025 All Rights Reserved.
 #include "./server.h"
 #include <arpa/inet.h>
 #include <asm-generic/socket.h>
@@ -14,12 +14,11 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-client_list_t client_list;
-
 int main(int argc, char *argv[]) {
   int serv_fd;
   struct sockaddr_un serv_addr, client_addr;
   socklen_t client_len;
+  client_list_t client_list;
 
   serv_fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (serv_fd == -1) {
@@ -99,5 +98,5 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  return EXIT_SUCCESS;
+  return -1;
 }
