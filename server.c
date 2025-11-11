@@ -70,41 +70,103 @@ int main(int argc, char *argv[]) {
 
       for (int i = 1; i < serv_offset; i++) {
         if (client_list.fds[i].revents & POLLIN) {
-          char buf[MSG_BUFSIZE];
+          char buf[MAX_MSG_LEN];
           ssize_t bytes_received;
           bytes_received = recv(client_list.fds[i].fd, buf, sizeof buf, 0);
 
           if (bytes_received > 0) {
             buf[bytes_received] = '\0';
-            if (strcmp(buf, "/menu\n") == 0) {
-              ssize_t opt_bytes_sent;
-              opt_bytes_sent = send(client_list.fds[i].fd, OPT_MSG_MENU,
-                                    sizeof OPT_MSG_MENU, 0);
-              break;
-            }
-            ssize_t bytes_sent;
-            char message[MAX_SEND_LEN];
-            int msg_len = snprintf(message, MAX_SEND_LEN, "%s: %s",
-                                   client_list.clients[i].name, buf);
+            if (buf[0] == '/') {
+              char *save_ptr;
 
-            for (int j = 1; j < serv_offset; j++) {
-              if (client_list.fds[j].fd == client_list.fds[i].fd)
+              if (strcmp(buf, "/menu\n") == 0) {
+                ssize_t opt_bytes_sent;
+                opt_bytes_sent = send(client_list.fds[i].fd, OPT_MSG_MENU,
+                                      strlen(OPT_MSG_MENU), 0);
                 continue;
-              bytes_sent = send(client_list.clients[j].fd, message, msg_len, 0);
+              }
+              if (strcmp(buf, "/exit\n") == 0) {
+                ssize_t opt_bytes_sent;
+                opt_bytes_sent = send(client_list.fds[i].fd, OPT_MSG_EXIT,
+                                      strlen(OPT_MSG_EXIT), 0);
+
+                client_list.fds[i] = client_list.fds[client_list.count];
+                client_list.clients[i] = client_list.clients[client_list.count];
+
+                close(client_list.fds[client_list.count].fd);
+                client_list.count--;
+                continue;
+              }
+              char *token = strtok_r(buf, DELIMITERS, &save_ptr);
+              if (strcmp(token, "/nick") == 0) {
+                token = strtok_r(NULL, DELIMITERS, &save_ptr);
+                fprintf(stdout, "token = %s\n", token);
+                if (token == NULL || token[0] == ' ') {
+                  send(client_list.fds[i].fd, ERR_NICK_EMPTY,
+                       strlen(ERR_NICK_EMPTY), 0);
+                  fprintf(stdout, "nick empty sent");
+                  continue;
+                }
+                if (strlen(token) > MAX_NAME_LEN) {
+                  send(client_list.fds[i].fd, ERR_NICK_LEN,
+                       strlen(ERR_NICK_LEN), 0);
+                  fprintf(stdout, "nick len sent");
+                  continue;
+                }
+                ssize_t opt_bytes_sent;
+                char nick_msg[MAX_MSG_LEN];
+                snprintf(client_list.clients[i].name, MAX_NAME_LEN, "%s",
+                         token);
+                snprintf(nick_msg, MAX_MSG_LEN, "%s %s\n", OPT_MSG_NICK_SUCCESS,
+                         token);
+                opt_bytes_sent =
+                    send(client_list.fds[i].fd, nick_msg, strlen(nick_msg), 0);
+                continue;
+              }
+
+              char not_found_msg[MAX_MSG_LEN];
+              snprintf(not_found_msg, MAX_MSG_LEN, "%s %s\n", ERR_OPT_NOT_FOUND,
+                       token);
+              send(client_list.fds[i].fd, not_found_msg, strlen(not_found_msg),
+                   0);
+              continue;
+            } else {
+              ssize_t bytes_sent;
+              char message[MAX_SEND_LEN];
+              int msg_len = snprintf(message, MAX_SEND_LEN, "%s: %s",
+                                     client_list.clients[i].name, buf);
+
+              for (int j = 1; j < serv_offset; j++) {
+                if (client_list.fds[j].fd == client_list.fds[i].fd)
+                  continue;
+                bytes_sent =
+                    send(client_list.clients[j].fd, message, msg_len, 0);
+              }
             }
+          } else if (bytes_received == 0) {
+            fprintf(stdout, "client disconnect: %d\n", client_list.fds[i].fd);
+            if (i != client_list.count) {
+              client_list.fds[i] = client_list.fds[client_list.count];
+              client_list.clients[i] = client_list.clients[client_list.count];
+              close(client_list.fds[client_list.count].fd);
+            } else {
+              close(client_list.fds[i].fd);
+            }
+            client_list.count--;
+            continue;
           }
         }
-      }
 
-      for (int k = 1; k < serv_offset; k++) {
-        if (client_list.fds[k].revents & POLLHUP) {
-          close(client_list.fds[k].fd);
-          if (k != client_list.count) {
-            client_list.fds[k] = client_list.fds[client_list.count];
-            client_list.clients[k] = client_list.clients[client_list.count];
+        for (int k = 1; k < serv_offset; k++) {
+          if (client_list.fds[k].revents & POLLHUP) {
+            if (k != client_list.count) {
+              client_list.fds[k] = client_list.fds[client_list.count];
+              client_list.clients[k] = client_list.clients[client_list.count];
+            }
+            close(client_list.fds[client_list.count].fd);
+            client_list.count--;
+            k--;
           }
-          client_list.count--;
-          k--;
         }
       }
     }

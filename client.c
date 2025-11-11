@@ -1,6 +1,7 @@
 #include "server.h"
 #include <arpa/inet.h>
 #include <errno.h>
+#include <ncurses.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +28,24 @@ int main() {
     exit(EXIT_FAILURE);
   }
 
+  // initscr();
+  // int chat_height = LINES - 3;
+  // int chat_width = COLS;
+  //
+  // int input_height = 3;
+  // int input_width = COLS;
+  //
+  // WINDOW *chat = newwin(chat_height, chat_width, 0, 0);
+  // WINDOW *input = newwin(input_height, input_width, LINES - 3, 0);
+  //
+  // box(chat, 0, 0);
+  // box(input, 0, 0);
+  //
+  // wmove(input, 1, 2);
+  //
+  // wrefresh(chat);
+  // wrefresh(input);
+
   while (1) {
     struct pollfd fds[2];
     fds[0].fd = 0;
@@ -37,7 +56,7 @@ int main() {
     int ready = poll(fds, 2, -1);
     if (ready > 0) {
       if (fds[0].revents & POLLIN) {
-        char buf[MSG_BUFSIZE];
+        char buf[MAX_MSG_LEN];
         if (fgets(buf, sizeof buf, stdin) == NULL) {
           perror("client: fgets from stdin");
         } else {
@@ -57,7 +76,8 @@ int main() {
         }
         buf[bytes_recv] = '\0';
 
-        if (strcmp(buf, "client_exit\n") == 0) {
+        if (strcmp(buf, OPT_MSG_EXIT) == 0) {
+          fprintf(stdout, OPT_MSG_EXIT);
           break;
         } else {
           fprintf(stdout, "%s", buf);
