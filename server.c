@@ -22,7 +22,7 @@ int main(int argc, char *argv[]) {
 
   serv_fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (serv_fd == -1) {
-    perror("socket");
+    perror("server: socket");
     exit(EXIT_FAILURE);
   }
 
@@ -32,16 +32,14 @@ int main(int argc, char *argv[]) {
   strncpy(serv_addr.sun_path, SOCK_PATH, sizeof(serv_addr.sun_path) - 1);
 
   if (bind(serv_fd, (struct sockaddr *)&serv_addr, sizeof serv_addr) == -1) {
-    perror("bind");
+    perror("server: bind");
     exit(EXIT_FAILURE);
   }
 
   if (listen(serv_fd, BACKLOG) == -1) {
-    perror("listen");
+    perror("server: listen");
     exit(EXIT_FAILURE);
   }
-
-  fprintf(stdout, "Client connected: %d\n", serv_fd);
 
   memset(&client_list, 0, sizeof client_list);
   client_list.clients = malloc(MAX_CLIENTS * sizeof(client_t));
@@ -61,9 +59,13 @@ int main(int argc, char *argv[]) {
         client_t client;
         client.fd = client_fd;
         client_list.clients[serv_offset] = client;
+        snprintf(client_list.clients[serv_offset].name, MAX_NAME_LEN, "%s",
+                 "Anonymous");
         client_list.fds[serv_offset].fd = client_fd;
         client_list.fds[serv_offset].events = POLLIN;
         client_list.count++;
+
+        fprintf(stdout, "Client connected: %d\n", client_fd);
       }
 
       for (int i = 1; i < serv_offset; i++) {
@@ -73,12 +75,22 @@ int main(int argc, char *argv[]) {
           bytes_received = recv(client_list.fds[i].fd, buf, sizeof buf, 0);
 
           if (bytes_received > 0) {
+            buf[bytes_received] = '\0';
+            if (strcmp(buf, "/menu\n") == 0) {
+              ssize_t opt_bytes_sent;
+              opt_bytes_sent = send(client_list.fds[i].fd, OPT_MSG_MENU,
+                                    sizeof OPT_MSG_MENU, 0);
+              break;
+            }
             ssize_t bytes_sent;
+            char message[MAX_SEND_LEN];
+            int msg_len = snprintf(message, MAX_SEND_LEN, "%s: %s",
+                                   client_list.clients[i].name, buf);
+
             for (int j = 1; j < serv_offset; j++) {
               if (client_list.fds[j].fd == client_list.fds[i].fd)
                 continue;
-              bytes_sent =
-                  send(client_list.clients[j].fd, buf, bytes_received, 0);
+              bytes_sent = send(client_list.clients[j].fd, message, msg_len, 0);
             }
           }
         }

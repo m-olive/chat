@@ -5,10 +5,12 @@
 #define BACKLOG 5
 #define N_THREADS 8
 #define MSG_BUFSIZE 5120
+#define MAX_SEND_LEN 5164
 #define MAX_NAME_LEN 32
 #define MAX_CLIENTS 50
 #define SOCK_PATH "/tmp/chat.sock"
-#define WELCOME_MSG "Welcome! You are now connected to chat"
+#define WELCOME_MSG "Welcome! You are now connected to chat\n"
+#define OPT_MSG_MENU "/nick to change your nickname\n/exit to exit\n"
 
 typedef struct {
   int fd;
