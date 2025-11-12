@@ -16,8 +16,7 @@
 
 int main(int argc, char *argv[]) {
   int serv_fd;
-  struct sockaddr_un serv_addr, client_addr;
-  socklen_t client_len;
+  struct sockaddr_un serv_addr;
   client_list_t client_list;
 
   serv_fd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -83,12 +82,20 @@ int main(int argc, char *argv[]) {
                 ssize_t opt_bytes_sent;
                 opt_bytes_sent = send(client_list.fds[i].fd, OPT_MSG_MENU,
                                       strlen(OPT_MSG_MENU), 0);
+                if (opt_bytes_sent <= 0) {
+                  perror("server: /menu send");
+                  continue;
+                }
                 continue;
               }
               if (strcmp(buf, "/exit\n") == 0) {
                 ssize_t opt_bytes_sent;
                 opt_bytes_sent = send(client_list.fds[i].fd, OPT_MSG_EXIT,
                                       strlen(OPT_MSG_EXIT), 0);
+                if (opt_bytes_sent <= 0) {
+                  perror("server: /exit send");
+                  continue;
+                }
 
                 client_list.fds[i] = client_list.fds[client_list.count];
                 client_list.clients[i] = client_list.clients[client_list.count];
@@ -121,6 +128,9 @@ int main(int argc, char *argv[]) {
                          token);
                 opt_bytes_sent =
                     send(client_list.fds[i].fd, nick_msg, strlen(nick_msg), 0);
+                if (opt_bytes_sent <= 0)
+                  perror("server: nick_msg send");
+
                 continue;
               }
 
@@ -137,10 +147,10 @@ int main(int argc, char *argv[]) {
                                      client_list.clients[i].name, buf);
 
               for (int j = 1; j < serv_offset; j++) {
-                if (client_list.fds[j].fd == client_list.fds[i].fd)
-                  continue;
-                bytes_sent =
-                    send(client_list.clients[j].fd, message, msg_len, 0);
+                bytes_sent = send(client_list.fds[j].fd, message, msg_len, 0);
+                if (bytes_sent <= 0) {
+                  perror("server: message send");
+                }
               }
             }
           } else if (bytes_received == 0) {

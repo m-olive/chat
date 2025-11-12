@@ -28,23 +28,38 @@ int main() {
     exit(EXIT_FAILURE);
   }
 
-  // initscr();
-  // int chat_height = LINES - 3;
-  // int chat_width = COLS;
-  //
-  // int input_height = 3;
-  // int input_width = COLS;
-  //
-  // WINDOW *chat = newwin(chat_height, chat_width, 0, 0);
-  // WINDOW *input = newwin(input_height, input_width, LINES - 3, 0);
-  //
-  // box(chat, 0, 0);
-  // box(input, 0, 0);
-  //
-  // wmove(input, 1, 2);
-  //
-  // wrefresh(chat);
-  // wrefresh(input);
+  initscr();
+  cbreak();
+  noecho();
+
+  int chat_height = LINES - 3;
+  int chat_width = COLS;
+
+  int input_height = 3;
+  int input_width = COLS;
+
+  WINDOW *chat = newwin(chat_height, chat_width, 0, 0);
+  WINDOW *input = newwin(input_height, input_width, LINES - 3, 0);
+  scrollok(input, FALSE);
+
+  WINDOW *chat_content = derwin(chat, chat_height - 2, chat_width - 3, 1, 2);
+  scrollok(chat_content, TRUE);
+
+  box(chat, 0, 0);
+  box(input, 0, 0);
+
+  keypad(input, TRUE);
+  wmove(chat, 1, 2);
+  wmove(input, 1, 2);
+
+  wrefresh(chat);
+  wrefresh(input);
+
+  char input_buf[MAX_MSG_LEN];
+  memset(input_buf, 0, MAX_MSG_LEN);
+
+  int count = 0;
+  int input_offset = 0;
 
   while (1) {
     struct pollfd fds[2];
@@ -56,15 +71,66 @@ int main() {
     int ready = poll(fds, 2, -1);
     if (ready > 0) {
       if (fds[0].revents & POLLIN) {
-        char buf[MAX_MSG_LEN];
-        if (fgets(buf, sizeof buf, stdin) == NULL) {
-          perror("client: fgets from stdin");
+        int ch = wgetch(input);
+        int vis_width = COLS - 4;
+
+        if (ch == '\n') {
+          input_buf[count++] = '\n';
+          input_buf[count] = '\0';
+
+          wclear(input);
+          box(input, 0, 0);
+          wmove(input, 1, 2);
+          wrefresh(input);
+
+          if (count >= MAX_MSG_LEN) {
+            wprintw(input, "\nMax message length exceeded");
+            wrefresh(input);
+          } else {
+            ssize_t bytes_sent = send(sockfd, input_buf, count, 0);
+            if (bytes_sent <= 0)
+              perror("client: send");
+
+            memset(input_buf, 0, MAX_MSG_LEN);
+            count = 0;
+            input_offset = 0;
+          }
+        } else if (ch == KEY_BACKSPACE || ch == 127 || ch == 8) {
+          if (count > 0) {
+            count--;
+            input_buf[count] = '\0';
+
+            int vis_count = count - input_offset;
+            if (vis_count < vis_width - 1 && input_offset > 0)
+              input_offset--;
+
+            wmove(input, 1, 2);
+            wclrtoeol(input);
+
+            int num_chars_displayed = (count - input_offset < vis_width)
+                                          ? count - input_offset
+                                          : vis_width;
+            for (int i = 0; i < num_chars_displayed; i++)
+              waddch(input, input_buf[input_offset + i]);
+
+            box(input, 0, 0);
+            wrefresh(input);
+          }
         } else {
-          ssize_t bytes_sent = send(sockfd, buf, strlen(buf), 0);
-          if (bytes_sent <= 0)
-            perror("client: send");
+          int vis_count = count - input_offset;
+          if (vis_count >= vis_width) {
+            input_offset++;
+            wmove(input, 1, 2);
+            wdelch(input);
+            wmove(input, 1, 2 + vis_width - 1);
+          }
+          input_buf[count++] = ch;
+          waddch(input, ch);
+          box(input, 0, 0);
+          wrefresh(input);
         }
       }
+
       if (fds[1].revents & POLLIN) {
         char buf[MAX_SEND_LEN];
         ssize_t bytes_recv = recv(sockfd, buf, MAX_SEND_LEN, 0);
@@ -77,17 +143,27 @@ int main() {
         buf[bytes_recv] = '\0';
 
         if (strcmp(buf, OPT_MSG_EXIT) == 0) {
-          fprintf(stdout, OPT_MSG_EXIT);
+          wprintw(chat_content, OPT_MSG_EXIT);
+          wrefresh(chat);
           break;
         } else {
-          fprintf(stdout, "%s", buf);
+          wprintw(chat_content, "%s", buf);
+
+          int y, x;
+          getyx(chat, y, x);
+          wmove(chat, y, 2);
+          (void)x;
+
+          wrefresh(chat);
+          wrefresh(chat_content);
+          wrefresh(input);
         }
       }
     }
   }
 
   close(sockfd);
-  fprintf(stdout, "Connection terminated, press any key to exit");
-  getchar();
+  endwin();
+  fprintf(stdout, "Connection terminated, press any key to exit\n");
   exit(EXIT_SUCCESS);
 }
