@@ -97,10 +97,11 @@ int main(int argc, char *argv[]) {
                   continue;
                 }
 
+                int closed_fd = client_list.fds[i].fd;
                 client_list.fds[i] = client_list.fds[client_list.count];
                 client_list.clients[i] = client_list.clients[client_list.count];
 
-                close(client_list.fds[client_list.count].fd);
+                close(closed_fd);
                 client_list.count--;
                 continue;
               }
@@ -156,9 +157,10 @@ int main(int argc, char *argv[]) {
           } else if (bytes_received == 0) {
             fprintf(stdout, "client disconnect: %d\n", client_list.fds[i].fd);
             if (i != client_list.count) {
+              int closed_fd = client_list.fds[i].fd;
               client_list.fds[i] = client_list.fds[client_list.count];
               client_list.clients[i] = client_list.clients[client_list.count];
-              close(client_list.fds[client_list.count].fd);
+              close(closed_fd);
             } else {
               close(client_list.fds[i].fd);
             }
@@ -169,11 +171,12 @@ int main(int argc, char *argv[]) {
 
         for (int k = 1; k < serv_offset; k++) {
           if (client_list.fds[k].revents & POLLHUP) {
+            int closed_fd = client_list.fds[k].fd;
             if (k != client_list.count) {
               client_list.fds[k] = client_list.fds[client_list.count];
               client_list.clients[k] = client_list.clients[client_list.count];
             }
-            close(client_list.fds[client_list.count].fd);
+            close(closed_fd);
             client_list.count--;
             k--;
           }

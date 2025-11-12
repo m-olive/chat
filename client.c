@@ -164,6 +164,6 @@ int main() {
 
   close(sockfd);
   endwin();
-  fprintf(stdout, "Connection terminated, press any key to exit\n");
+  fprintf(stdout, "Connection terminated\n");
   exit(EXIT_SUCCESS);
 }
