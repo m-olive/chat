@@ -12,12 +12,55 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
+#include <time.h>
 #include <unistd.h>
+
+#define NOTIFY_ADDR "matt.d.oliveira@gmail.com"
+#define ADMIN_NAME "@Matt"
+
+static void send_welcome(int fd) {
+  time_t now = time(NULL);
+  struct tm *tm = localtime(&now);
+  char buf[MAX_MSG_LEN];
+  int off = strftime(buf, sizeof buf, "[%H:%M] ", tm);
+  snprintf(buf + off, sizeof buf - off,
+           "Welcome to m-chat! Use /help for help.\n");
+  send(fd, buf, strlen(buf), 0);
+}
+
+static void notify_connect(void) {
+  pid_t pid = fork();
+  if (pid != 0)
+    return;
+  FILE *fp = popen("/usr/sbin/sendmail " NOTIFY_ADDR, "w");
+  if (!fp)
+    _exit(1);
+  fprintf(fp, "To: " NOTIFY_ADDR "\n");
+  fprintf(fp, "Subject: m-chat: new connection\n\n");
+  fprintf(fp, "A user has connected to m-chat.\n");
+  pclose(fp);
+  _exit(0);
+}
+
+static void broadcast_userlist(client_list_t *cl) {
+  char buf[MAX_SEND_LEN];
+  int off = snprintf(buf, sizeof buf, "%s", OPT_MSG_USERLIST);
+  for (int i = 1; i <= cl->count; i++) {
+    if (i > 1)
+      off += snprintf(buf + off, sizeof buf - off, ",");
+    off += snprintf(buf + off, sizeof buf - off, "%s", cl->clients[i].name);
+  }
+  off += snprintf(buf + off, sizeof buf - off, "\n");
+  for (int i = 1; i <= cl->count; i++)
+    send(cl->fds[i].fd, buf, off, 0);
+}
 
 int main(int argc, char *argv[]) {
   int serv_fd;
   struct sockaddr_un serv_addr;
   client_list_t client_list;
+
+  signal(SIGCHLD, SIG_IGN);
 
   serv_fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (serv_fd == -1) {
@@ -65,6 +108,9 @@ int main(int argc, char *argv[]) {
         client_list.count++;
 
         fprintf(stdout, "Client connected: %d\n", client_fd);
+        send_welcome(client_fd);
+        notify_connect();
+        broadcast_userlist(&client_list);
       }
 
       for (int i = 1; i < serv_offset; i++) {
@@ -88,6 +134,29 @@ int main(int argc, char *argv[]) {
                 }
                 continue;
               }
+              if (strcmp(buf, "/help\n") == 0) {
+                send(client_list.fds[i].fd, OPT_MSG_HELP,
+                     strlen(OPT_MSG_HELP), 0);
+                continue;
+              }
+              if (strncmp(buf, "/login ", 7) == 0) {
+                char *pw = buf + 7;
+                char *nl = strchr(pw, '\n');
+                if (nl)
+                  *nl = '\0';
+                char *env_pw = getenv("MCHAT_PASSWORD");
+                if (env_pw && strcmp(pw, env_pw) == 0) {
+                  snprintf(client_list.clients[i].name, MAX_NAME_LEN, "%s",
+                           ADMIN_NAME);
+                  char msg[] = "Authenticated as " ADMIN_NAME "\n";
+                  send(client_list.fds[i].fd, msg, strlen(msg), 0);
+                  broadcast_userlist(&client_list);
+                } else {
+                  char msg[] = "Authentication failed\n";
+                  send(client_list.fds[i].fd, msg, strlen(msg), 0);
+                }
+                continue;
+              }
               if (strcmp(buf, "/exit\n") == 0) {
                 ssize_t opt_bytes_sent;
                 opt_bytes_sent = send(client_list.fds[i].fd, OPT_MSG_EXIT,
@@ -103,6 +172,7 @@ int main(int argc, char *argv[]) {
 
                 close(closed_fd);
                 client_list.count--;
+                broadcast_userlist(&client_list);
                 continue;
               }
               char *token = strtok_r(buf, DELIMITERS, &save_ptr);
@@ -132,6 +202,7 @@ int main(int argc, char *argv[]) {
                 if (opt_bytes_sent <= 0)
                   perror("server: nick_msg send");
 
+                broadcast_userlist(&client_list);
                 continue;
               }
 
@@ -165,6 +236,7 @@ int main(int argc, char *argv[]) {
               close(client_list.fds[i].fd);
             }
             client_list.count--;
+            broadcast_userlist(&client_list);
             continue;
           }
         }
@@ -181,6 +253,8 @@ int main(int argc, char *argv[]) {
             k--;
           }
         }
+        if (client_list.count > 0)
+          broadcast_userlist(&client_list);
       }
     }
   }
